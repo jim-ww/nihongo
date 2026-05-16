@@ -15,7 +15,7 @@
       systems = flake-utils.lib.defaultSystems;
 
       perSystem = {pkgs, ...}: let
-        runtimeDeps = [pkgs.mpv];
+        runtimeDeps = [];
         nihongoPkg = pkgs.buildGoModule {
           pname = "nihongo";
           version = "1.0";
