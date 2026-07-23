@@ -136,6 +136,13 @@ func (d *DB) FindEntryByID(id int) (store.FtsDict, error) {
 	return dict, err
 }
 
+// ftsQuote escapes a raw string for use as a literal FTS5 phrase, so that
+// characters with special meaning in FTS5 query syntax (e.g. '-', ':', '"')
+// are not misinterpreted as query operators/column filters.
+func ftsQuote(s string) string {
+	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
+}
+
 // - kanji -> search in expression 'kana'+'*'
 // - romaji (if latin and no -e flag) -> search 'input'+'*' in reading_romaji, max priority on equality
 // - English (if latin + -e flag) -> search in definitions, how?
@@ -168,13 +175,13 @@ func (d *DB) Search(input string, limit int, isEnglish bool) ([]store.FtsDict, e
 				ELSE 0
 			END DESC,
 			score DESC`
-		args = []any{query + "*", query, query, query}
+		args = []any{ftsQuote(query) + "*", query, query, query}
 
 	default:
 		// Japanese / Romaji search
-		exprPrefix := originalInput + "*"
+		exprPrefix := ftsQuote(originalInput) + "*"
 		romajiClean := strings.ReplaceAll(query, "-", "")
-		romajiPrefix := romajiClean + "*"
+		romajiPrefix := ftsQuote(romajiClean) + "*"
 		where = `expression MATCH ? OR reading_romaji MATCH ?`
 		orderBy = `score DESC,
 		           CASE WHEN expression = ? THEN 4500
