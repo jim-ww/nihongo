@@ -90,10 +90,16 @@ func formatEntry(r store.FtsDict) string {
 	if len(r.Examples) > 0 {
 		fmt.Fprintln(b, "Examples:")
 		for i, ex := range r.Examples {
-			for line := range strings.SplitSeq(ex, "\n") {
+			lines := strings.Split(ex, "\n")
+			for j, line := range lines {
 				trimmed := strings.TrimSpace(line)
-				if trimmed != "" {
+				if trimmed == "" {
+					continue
+				}
+				if j == 0 {
 					fmt.Fprintf(b, "  %d. %s\n", i+1, trimmed)
+				} else {
+					fmt.Fprintf(b, "     %s\n", trimmed)
 				}
 			}
 			fmt.Fprintln(b)
