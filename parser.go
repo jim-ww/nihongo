@@ -204,6 +204,29 @@ func walkStructuredContent(node any, pos, defs, examples *[]string) {
 			}
 			return
 
+		case "sense":
+			// A sense's glossary and any note/xref that qualify it live
+			// together under this node. Fold them into one definition
+			// string instead of flattening them into separate list items,
+			// so a note like "usu. 小父さん or おじさん" reads as
+			// qualifying its own sense rather than appearing to be an
+			// unrelated definition of its own.
+			var gloss, notes, xrefs []string
+			walkSense(v["content"], &gloss, &notes, &xrefs, examples)
+
+			def := strings.Join(gloss, "; ")
+			for _, n := range notes {
+				def += " (" + n + ")"
+			}
+			for _, x := range xrefs {
+				def += " (" + x + ")"
+			}
+			def = strings.TrimSpace(def)
+			if def != "" {
+				*defs = append(*defs, def)
+			}
+			return
+
 		case "glossary":
 			items := collectListItems(v["content"])
 			if joined := strings.Join(items, "; "); joined != "" {
@@ -212,69 +235,19 @@ func walkStructuredContent(node any, pos, defs, examples *[]string) {
 			return
 
 		case "sense-note", "info-gloss":
-			var text string
-			for _, c := range asSlice(v["content"]) {
-				m, ok := c.(map[string]any)
-				if !ok {
-					continue
-				}
-				dc := dataContent(m)
-				if strings.HasSuffix(dc, "-content") {
-					text = strings.TrimSpace(renderText(m["content"]))
-				}
-			}
-			if text != "" {
-				*defs = append(*defs, "Note: "+text)
+			if label, text := noteLabelText(v); text != "" {
+				*defs = append(*defs, label+": "+text)
 			}
 			return
 
 		case "xref":
-			var link, gloss string
-			for _, c := range asSlice(v["content"]) {
-				m, ok := c.(map[string]any)
-				if !ok {
-					continue
-				}
-				switch dataContent(m) {
-				case "xref-content":
-					var parts []string
-					for _, cc := range asSlice(m["content"]) {
-						if cm, ok := cc.(map[string]any); ok && dataContent(cm) == "reference-label" {
-							continue
-						}
-						if t := strings.TrimSpace(renderText(cc)); t != "" {
-							parts = append(parts, t)
-						}
-					}
-					link = strings.Join(parts, " ")
-				case "xref-glossary":
-					gloss = strings.TrimSpace(renderText(m["content"]))
-				}
-			}
-			if link != "" {
-				s := "See also: " + link
-				if gloss != "" {
-					s += " (" + gloss + ")"
-				}
-				*defs = append(*defs, s)
+			if x := xrefText(v); x != "" {
+				*defs = append(*defs, x)
 			}
 			return
 
 		case "example-sentence":
-			var jp, en string
-			for _, c := range asSlice(v["content"]) {
-				m, ok := c.(map[string]any)
-				if !ok {
-					continue
-				}
-				switch dataContent(m) {
-				case "example-sentence-a":
-					jp = strings.TrimSpace(renderText(m["content"]))
-				case "example-sentence-b":
-					en = strings.TrimSpace(renderText(m["content"]))
-				}
-			}
-			if jp != "" || en != "" {
+			if jp, en := exampleSentenceText(v); jp != "" || en != "" {
 				*examples = append(*examples, jp+"\n"+en)
 			}
 			return
@@ -284,9 +257,115 @@ func walkStructuredContent(node any, pos, defs, examples *[]string) {
 			return
 		}
 
-		// presentational wrapper (sense-group, sense, extra-info, ...): recurse
+		// presentational wrapper (sense-group, extra-info, ...): recurse
 		if content, ok := v["content"]; ok {
 			walkStructuredContent(content, pos, defs, examples)
 		}
 	}
+}
+
+// walkSense descends a single sense's subtree, splitting its glossary text
+// from the notes/xrefs that qualify it, so the caller can fold them into one
+// definition. Example sentences found along the way still flow to the
+// entry's shared examples list.
+func walkSense(node any, gloss, notes, xrefs *[]string, examples *[]string) {
+	switch v := node.(type) {
+	case []any:
+		for _, c := range v {
+			walkSense(c, gloss, notes, xrefs, examples)
+		}
+		return
+	case map[string]any:
+		switch dataContent(v) {
+		case "glossary":
+			*gloss = append(*gloss, collectListItems(v["content"])...)
+			return
+		case "sense-note", "info-gloss":
+			if label, text := noteLabelText(v); text != "" {
+				*notes = append(*notes, label+": "+text)
+			}
+			return
+		case "xref":
+			if x := xrefText(v); x != "" {
+				*xrefs = append(*xrefs, x)
+			}
+			return
+		case "example-sentence":
+			if jp, en := exampleSentenceText(v); jp != "" || en != "" {
+				*examples = append(*examples, jp+"\n"+en)
+			}
+			return
+		}
+		if content, ok := v["content"]; ok {
+			walkSense(content, gloss, notes, xrefs, examples)
+		}
+	}
+}
+
+func noteLabelText(v map[string]any) (label, text string) {
+	for _, c := range asSlice(v["content"]) {
+		m, ok := c.(map[string]any)
+		if !ok {
+			continue
+		}
+		switch {
+		case strings.HasSuffix(dataContent(m), "-label"):
+			label = strings.TrimSpace(renderText(m["content"]))
+		case strings.HasSuffix(dataContent(m), "-content"):
+			text = strings.TrimSpace(renderText(m["content"]))
+		}
+	}
+	if label == "" {
+		label = "Note"
+	}
+	return label, text
+}
+
+func xrefText(v map[string]any) string {
+	var link, gloss string
+	for _, c := range asSlice(v["content"]) {
+		m, ok := c.(map[string]any)
+		if !ok {
+			continue
+		}
+		switch dataContent(m) {
+		case "xref-content":
+			var parts []string
+			for _, cc := range asSlice(m["content"]) {
+				if cm, ok := cc.(map[string]any); ok && dataContent(cm) == "reference-label" {
+					continue
+				}
+				if t := strings.TrimSpace(renderText(cc)); t != "" {
+					parts = append(parts, t)
+				}
+			}
+			link = strings.Join(parts, " ")
+		case "xref-glossary":
+			gloss = strings.TrimSpace(renderText(m["content"]))
+		}
+	}
+	if link == "" {
+		return ""
+	}
+	s := "See also: " + link
+	if gloss != "" {
+		s += " (" + gloss + ")"
+	}
+	return s
+}
+
+func exampleSentenceText(v map[string]any) (jp, en string) {
+	for _, c := range asSlice(v["content"]) {
+		m, ok := c.(map[string]any)
+		if !ok {
+			continue
+		}
+		switch dataContent(m) {
+		case "example-sentence-a":
+			jp = strings.TrimSpace(renderText(m["content"]))
+		case "example-sentence-b":
+			en = strings.TrimSpace(renderText(m["content"]))
+		}
+	}
+	return jp, en
 }
