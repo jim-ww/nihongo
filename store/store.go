@@ -31,6 +31,7 @@ type FtsDict struct {
 	Examples       []string     `db:"examples" json:"examples"`
 	Pos            []string     `db:"pos" json:"pos"`
 	Groups         []SenseGroup `db:"groups" json:"groups"`
+	Forms          []string     `db:"forms" json:"forms"`
 	DefinitionTags string       `db:"definition_tags" json:"definition_tags"`
 	TermTags       string       `db:"term_tags" json:"term_tags"`
 	Score          float64      `db:"score" json:"score"`

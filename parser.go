@@ -37,7 +37,14 @@ func convertToFtsDict(term []any) store.FtsDict {
 	reading := getString(term[1])
 	romaji := kana.KanaToRomaji(reading)
 
-	groups, pos, defs, examples := extractEntry(term[5])
+	groups, pos, defs, examples, forms := extractEntry(term[5])
+
+	var altForms []string
+	for _, f := range forms {
+		if f != expression && f != reading {
+			appendUnique(&altForms, f)
+		}
+	}
 
 	return store.FtsDict{
 		Expression:     expression,
@@ -51,6 +58,7 @@ func convertToFtsDict(term []any) store.FtsDict {
 		Examples:       examples,
 		Pos:            pos,
 		Groups:         groups,
+		Forms:          altForms,
 	}
 }
 
@@ -177,7 +185,7 @@ func findAllByMarker(root any, marker string) []map[string]any {
 // grouped the way the dictionary itself groups it - senses sharing a
 // part-of-speech under one heading - plus flattened pos/definitions/examples
 // for search indexing and list-view previews.
-func extractEntry(glossary any) (groups []store.SenseGroup, pos, defs, examples []string) {
+func extractEntry(glossary any) (groups []store.SenseGroup, pos, defs, examples, forms []string) {
 	for _, item := range asSlice(glossary) {
 		switch v := item.(type) {
 		case string:
@@ -188,6 +196,9 @@ func extractEntry(glossary any) (groups []store.SenseGroup, pos, defs, examples 
 			switch getString(v["type"]) {
 			case "structured-content":
 				groups = append(groups, extractSenseGroups(v["content"])...)
+				for _, f := range extractForms(v["content"]) {
+					appendUnique(&forms, f)
+				}
 			case "text":
 				t := strings.TrimSpace(getString(v["text"]))
 				if t == "" {
@@ -242,6 +253,46 @@ func extractSenseGroups(node any) []store.SenseGroup {
 		groups = append(groups, buildSenseGroup(pos, senseNodes))
 	}
 	return groups
+}
+
+// extractForms reads a "forms" table (alternate spellings/readings for the
+// entry, e.g. ＣＤプレーヤー vs ＣＤプレイヤー vs シーディープレーヤー) and
+// returns every distinct spelling/reading it lists. The table's per-cell
+// priority/validity markers aren't reconstructed here - for a text CLI just
+// knowing the alternate forms exist is the useful part.
+func extractForms(node any) []string {
+	var out []string
+	for _, formsNode := range findAllByMarker(node, "forms") {
+		table := findTag(formsNode["content"], "table")
+		if table == nil {
+			continue
+		}
+		for _, row := range asSlice(table["content"]) {
+			rm, ok := row.(map[string]any)
+			if !ok {
+				continue
+			}
+			for _, cell := range asSlice(rm["content"]) {
+				cm, ok := cell.(map[string]any)
+				if !ok || getString(cm["tag"]) != "th" {
+					continue
+				}
+				if t := strings.TrimSpace(renderText(cm["content"])); t != "" {
+					appendUnique(&out, t)
+				}
+			}
+		}
+	}
+	return out
+}
+
+func findTag(content any, tag string) map[string]any {
+	for _, it := range asSlice(content) {
+		if m, ok := it.(map[string]any); ok && getString(m["tag"]) == tag {
+			return m
+		}
+	}
+	return nil
 }
 
 func collectPOS(node any) []string {

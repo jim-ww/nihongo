@@ -24,6 +24,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS fts_dict USING fts5(
     examples,
     pos,
     groups_json UNINDEXED,
+    forms UNINDEXED,
     definition_tags,
     term_tags,
     sequence,
@@ -70,8 +71,8 @@ func (d *DB) InsertFtsDictBatch(bank []store.FtsDict) error {
 
 	stmt, err := tx.Prepare(`
         INSERT INTO fts_dict
-        (expression, reading, reading_romaji, definitions, examples, pos, groups_json, definition_tags, term_tags, sequence, score)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (expression, reading, reading_romaji, definitions, examples, pos, groups_json, forms, definition_tags, term_tags, sequence, score)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 	if err != nil {
 		return fmt.Errorf("prepare: %w", err)
@@ -82,6 +83,7 @@ func (d *DB) InsertFtsDictBatch(bank []store.FtsDict) error {
 		defsJoined := joinDefinitions(entry.Definitions)
 		examplesJoined := joinDefinitions(entry.Examples)
 		posJoined := joinDefinitions(entry.Pos)
+		formsJoined := joinDefinitions(entry.Forms)
 
 		groupsJSON, err := json.Marshal(entry.Groups)
 		if err != nil {
@@ -96,6 +98,7 @@ func (d *DB) InsertFtsDictBatch(bank []store.FtsDict) error {
 			examplesJoined,
 			posJoined,
 			string(groupsJSON),
+			formsJoined,
 			entry.DefinitionTags,
 			entry.TermTags,
 			entry.Sequence,
@@ -120,18 +123,18 @@ func (d *DB) HasAtLeastOneEntry() (bool, error) {
 
 func (d *DB) FindEntryByID(id int) (store.FtsDict, error) {
 	const q = `
-        SELECT rowid, expression, reading, reading_romaji, definitions, examples, pos, groups_json,
+        SELECT rowid, expression, reading, reading_romaji, definitions, examples, pos, groups_json, forms,
                definition_tags, term_tags, score, sequence
         FROM fts_dict
         WHERE rowid = ?
     `
 
 	var dict store.FtsDict
-	var defs, examples, pos, groupsJSON string
+	var defs, examples, pos, groupsJSON, forms string
 
 	err := d.QueryRow(q, id).Scan(
 		&dict.RowID, &dict.Expression, &dict.Reading, &dict.ReadingRomaji,
-		&defs, &examples, &pos, &groupsJSON,
+		&defs, &examples, &pos, &groupsJSON, &forms,
 		&dict.DefinitionTags, &dict.TermTags, &dict.Score, &dict.Sequence,
 	)
 
@@ -139,6 +142,7 @@ func (d *DB) FindEntryByID(id int) (store.FtsDict, error) {
 		dict.Definitions = splitDefinitions(defs)
 		dict.Examples = splitDefinitions(examples)
 		dict.Pos = splitDefinitions(pos)
+		dict.Forms = splitDefinitions(forms)
 		_ = json.Unmarshal([]byte(groupsJSON), &dict.Groups)
 	}
 
@@ -196,12 +200,12 @@ func (d *DB) Search(input string, limit int, isEnglish bool) ([]store.FtsDict, e
 		           CASE WHEN expression = ? THEN 4500
 		                WHEN reading_romaji = ? THEN 4000
 		                ELSE 0 END DESC,
-		           bm25(fts_dict, 20, 3, 38, 3, 1, 1, 0, 1, 1, 1, 1) DESC`
+		           bm25(fts_dict, 20, 3, 38, 3, 1, 1, 0, 0, 1, 1, 1, 1) DESC`
 		args = []any{exprPrefix, romajiPrefix, originalInput, query}
 	}
 
 	q := fmt.Sprintf(`
-        SELECT rowid, expression, reading, reading_romaji, definitions, examples, pos, groups_json,
+        SELECT rowid, expression, reading, reading_romaji, definitions, examples, pos, groups_json, forms,
                definition_tags, term_tags, score, sequence
         FROM fts_dict
         WHERE %s
@@ -219,11 +223,11 @@ func (d *DB) Search(input string, limit int, isEnglish bool) ([]store.FtsDict, e
 	var entries []store.FtsDict
 	for rows.Next() {
 		var dict store.FtsDict
-		var defs, examples, posStr, groupsJSON string
+		var defs, examples, posStr, groupsJSON, forms string
 
 		if err := rows.Scan(
 			&dict.RowID, &dict.Expression, &dict.Reading, &dict.ReadingRomaji,
-			&defs, &examples, &posStr, &groupsJSON,
+			&defs, &examples, &posStr, &groupsJSON, &forms,
 			&dict.DefinitionTags, &dict.TermTags, &dict.Score, &dict.Sequence,
 		); err != nil {
 			return nil, err
@@ -232,6 +236,7 @@ func (d *DB) Search(input string, limit int, isEnglish bool) ([]store.FtsDict, e
 		dict.Definitions = splitDefinitions(defs)
 		dict.Examples = splitDefinitions(examples)
 		dict.Pos = splitDefinitions(posStr)
+		dict.Forms = splitDefinitions(forms)
 		_ = json.Unmarshal([]byte(groupsJSON), &dict.Groups)
 
 		entries = append(entries, dict)

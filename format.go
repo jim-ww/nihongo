@@ -69,8 +69,14 @@ func formatEntry(r store.FtsDict) string {
 			}
 			tags += r.DefinitionTags
 		}
-		fmt.Fprintf(b, "Tags: %s\n\n", tags)
+		fmt.Fprintf(b, "Tags: %s\n", tags)
 	}
+
+	if len(r.Forms) > 0 {
+		fmt.Fprintf(b, "Also written/read: %s\n", strings.Join(r.Forms, ", "))
+	}
+
+	fmt.Fprintln(b)
 
 	if len(r.Groups) > 0 {
 		formatGroups(b, r.Groups)
