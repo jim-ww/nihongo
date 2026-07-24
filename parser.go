@@ -222,8 +222,14 @@ func extractEntry(glossary any) (groups []store.SenseGroup, pos, defs, examples,
 			appendUnique(&pos, p)
 		}
 		for _, s := range g.Senses {
-			if s.Gloss != "" {
-				defs = append(defs, s.Gloss)
+			// Split back into individual glosses (rather than keeping the
+			// "; "-joined sense) so each one becomes its own space-bounded
+			// token in the search index - that's what lets exact/boundary
+			// matching in Search() actually work.
+			for _, gl := range strings.Split(s.Gloss, "; ") {
+				if gl = strings.TrimSpace(gl); gl != "" {
+					defs = append(defs, gl)
+				}
 			}
 			for _, ex := range s.Examples {
 				examples = append(examples, ex.JP+"\n"+ex.EN)

@@ -80,7 +80,12 @@ func (d *DB) InsertFtsDictBatch(bank []store.FtsDict) error {
 	defer stmt.Close()
 
 	for _, entry := range bank {
-		defsJoined := joinDefinitions(entry.Definitions)
+		// Definitions are joined with a space-bounded " | " (rather than
+		// "\n\n") specifically so Search() can reliably detect an exact or
+		// word-boundary gloss match with a plain LIKE - "\n\n"-joined text
+		// has no space around glosses that start/end a line, which broke
+		// boundary matching entirely.
+		defsJoined := joinWith(entry.Definitions, " | ")
 		examplesJoined := joinDefinitions(entry.Examples)
 		posJoined := joinDefinitions(entry.Pos)
 		formsJoined := joinDefinitions(entry.Forms)
@@ -139,7 +144,7 @@ func (d *DB) FindEntryByID(id int) (store.FtsDict, error) {
 	)
 
 	if err == nil {
-		dict.Definitions = splitDefinitions(defs)
+		dict.Definitions = splitWith(defs, " | ")
 		dict.Examples = splitDefinitions(examples)
 		dict.Pos = splitDefinitions(pos)
 		dict.Forms = splitDefinitions(forms)
@@ -177,18 +182,23 @@ func (d *DB) Search(input string, limit int, isEnglish bool) ([]store.FtsDict, e
 
 	switch {
 	case kana.IsLatin(input) && isEnglish:
-		// English search
+		// English search. Definitions are stored as individual glosses
+		// joined with " | ", e.g. "existence | being | presence". Padding
+		// the column with " | " on both ends before matching turns every
+		// gloss boundary (start/middle/end) into the same "% | x | %"
+		// shape, and replacing "|" with a space for the looser check
+		// makes "run" also match inside a multi-word gloss like "to run".
 		where = `definitions MATCH ?`
 		orderBy = `
 			CASE
-				WHEN definitions LIKE '% ' || ? || ' %'
-				  OR definitions LIKE ? || ' %'
-				  OR definitions LIKE '% ' || ?
+				WHEN (' | ' || definitions || ' | ') LIKE ('% | ' || ? || ' | %')
+				THEN 20000
+				WHEN (' ' || replace(definitions, '|', ' ') || ' ') LIKE ('% ' || ? || ' %')
 				THEN 10000
 				ELSE 0
 			END DESC,
 			score DESC`
-		args = []any{ftsQuote(query) + "*", query, query, query}
+		args = []any{ftsQuote(query) + "*", query, query}
 
 	default:
 		// Japanese / Romaji search
@@ -233,7 +243,7 @@ func (d *DB) Search(input string, limit int, isEnglish bool) ([]store.FtsDict, e
 			return nil, err
 		}
 
-		dict.Definitions = splitDefinitions(defs)
+		dict.Definitions = splitWith(defs, " | ")
 		dict.Examples = splitDefinitions(examples)
 		dict.Pos = splitDefinitions(posStr)
 		dict.Forms = splitDefinitions(forms)
@@ -260,4 +270,18 @@ func splitDefinitions(s string) []string {
 		return nil
 	}
 	return strings.Split(s, "\n\n")
+}
+
+func joinWith(items []string, sep string) string {
+	if len(items) == 0 {
+		return ""
+	}
+	return strings.Join(items, sep)
+}
+
+func splitWith(s, sep string) []string {
+	if s == "" {
+		return nil
+	}
+	return strings.Split(s, sep)
 }
