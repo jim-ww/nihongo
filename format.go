@@ -72,6 +72,53 @@ func formatEntry(r store.FtsDict) string {
 		fmt.Fprintf(b, "Tags: %s\n\n", tags)
 	}
 
+	if len(r.Groups) > 0 {
+		formatGroups(b, r.Groups)
+	} else {
+		formatFlatDefinitions(b, r)
+	}
+
+	return b.String()
+}
+
+// formatGroups renders senses under the part-of-speech heading they share,
+// mirroring how the dictionary itself groups meanings, with each sense's
+// notes/cross-references/examples nested beneath it instead of flattened
+// into the definition list.
+func formatGroups(b *strings.Builder, groups []store.SenseGroup) {
+	n := 0
+	for _, g := range groups {
+		if len(g.Senses) == 0 {
+			continue
+		}
+		if len(g.Pos) > 0 {
+			fmt.Fprintf(b, "%s\n", strings.Join(g.Pos, ", "))
+		}
+		for _, s := range g.Senses {
+			n++
+			fmt.Fprintf(b, "  %d. %s\n", n, s.Gloss)
+			for _, note := range s.Notes {
+				fmt.Fprintf(b, "       %s\n", note)
+			}
+			for _, xref := range s.Xrefs {
+				fmt.Fprintf(b, "       %s\n", xref)
+			}
+			for _, ex := range s.Examples {
+				if ex.JP != "" {
+					fmt.Fprintf(b, "       e.g. %s\n", ex.JP)
+				}
+				if ex.EN != "" {
+					fmt.Fprintf(b, "            %s\n", ex.EN)
+				}
+			}
+		}
+		fmt.Fprintln(b)
+	}
+}
+
+// formatFlatDefinitions is the fallback for glossaries that never had
+// structured-content grouping to begin with (plain-string glossaries).
+func formatFlatDefinitions(b *strings.Builder, r store.FtsDict) {
 	if len(r.Pos) > 0 {
 		fmt.Fprintf(b, "Part of Speech: %s\n\n", strings.Join(r.Pos, ", "))
 	}
@@ -105,6 +152,4 @@ func formatEntry(r store.FtsDict) string {
 			fmt.Fprintln(b)
 		}
 	}
-
-	return b.String()
 }

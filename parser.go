@@ -37,7 +37,7 @@ func convertToFtsDict(term []any) store.FtsDict {
 	reading := getString(term[1])
 	romaji := kana.KanaToRomaji(reading)
 
-	pos, defs, examples := extractGlossary(term[5])
+	groups, pos, defs, examples := extractEntry(term[5])
 
 	return store.FtsDict{
 		Expression:     expression,
@@ -50,6 +50,7 @@ func convertToFtsDict(term []any) store.FtsDict {
 		Definitions:    defs,
 		Examples:       examples,
 		Pos:            pos,
+		Groups:         groups,
 	}
 }
 
@@ -142,133 +143,145 @@ func appendUnique(list *[]string, s string) {
 	*list = append(*list, s)
 }
 
-// extractGlossary parses a Yomitan term-bank glossary field (term[5]) into
-// part-of-speech tags, flat definitions and example sentences. It walks the
-// structured-content tree by its semantic `data.content` markers rather than
-// guessing intent from raw text, since that's how the format actually
-// encodes meaning.
-func extractGlossary(glossary any) (pos, defs, examples []string) {
+// findAllByMarker collects every node under root carrying the given
+// `data.content` marker. It does not recurse into a matched node, since
+// none of the markers this parser cares about nest inside themselves
+// (a "sense" never contains another "sense", a "sense-group" never
+// contains another "sense-group").
+func findAllByMarker(root any, marker string) []map[string]any {
+	var out []map[string]any
+	var walk func(n any)
+	walk = func(n any) {
+		switch v := n.(type) {
+		case []any:
+			for _, c := range v {
+				walk(c)
+			}
+		case map[string]any:
+			if dataContent(v) == marker {
+				out = append(out, v)
+				return
+			}
+			if content, ok := v["content"]; ok {
+				walk(content)
+			}
+		}
+	}
+	walk(root)
+	return out
+}
+
+// extractEntry parses a Yomitan term-bank glossary field (term[5]) by
+// walking the structured-content tree via its semantic `data.content`
+// markers rather than guessing intent from raw text. It returns the entry
+// grouped the way the dictionary itself groups it - senses sharing a
+// part-of-speech under one heading - plus flattened pos/definitions/examples
+// for search indexing and list-view previews.
+func extractEntry(glossary any) (groups []store.SenseGroup, pos, defs, examples []string) {
 	for _, item := range asSlice(glossary) {
 		switch v := item.(type) {
 		case string:
 			if t := strings.TrimSpace(v); t != "" {
-				defs = append(defs, t)
+				groups = append(groups, store.SenseGroup{Senses: []store.Sense{{Gloss: t}}})
 			}
 		case map[string]any:
 			switch getString(v["type"]) {
 			case "structured-content":
-				walkStructuredContent(v["content"], &pos, &defs, &examples)
+				groups = append(groups, extractSenseGroups(v["content"])...)
 			case "text":
 				t := strings.TrimSpace(getString(v["text"]))
 				if t == "" {
 					t = strings.TrimSpace(renderText(v["content"]))
 				}
 				if t != "" {
-					defs = append(defs, t)
+					groups = append(groups, store.SenseGroup{Senses: []store.Sense{{Gloss: t}}})
 				}
 			case "image":
 				// unsupported in a text-only CLI, skip
 			default:
 				if _, ok := v["content"]; ok {
-					walkStructuredContent(v["content"], &pos, &defs, &examples)
+					groups = append(groups, extractSenseGroups(v["content"])...)
 				}
+			}
+		}
+	}
+
+	for _, g := range groups {
+		for _, p := range g.Pos {
+			appendUnique(&pos, p)
+		}
+		for _, s := range g.Senses {
+			if s.Gloss != "" {
+				defs = append(defs, s.Gloss)
+			}
+			for _, ex := range s.Examples {
+				examples = append(examples, ex.JP+"\n"+ex.EN)
 			}
 		}
 	}
 	return
 }
 
-// walkStructuredContent recursively descends a structured-content tree,
-// extracting information from nodes with a recognized `data.content`
-// marker and transparently recursing through purely presentational
-// wrappers (div/span/ul/ol/li with no marker) to find them. Containers
-// known to hold only presentational or attribution text (links back to the
-// source dictionary, alternate-spelling tables) are skipped entirely so
-// their text never leaks into definitions.
-func walkStructuredContent(node any, pos, defs, examples *[]string) {
-	switch v := node.(type) {
-	case []any:
-		for _, child := range v {
-			walkStructuredContent(child, pos, defs, examples)
+// extractSenseGroups finds every sense-group in a structured-content tree
+// and builds it into a store.SenseGroup. Dictionaries occasionally omit the
+// sense-group wrapper for a single ungrouped sense, so as a fallback it
+// looks for bare "sense" nodes too.
+func extractSenseGroups(node any) []store.SenseGroup {
+	groupNodes := findAllByMarker(node, "sense-group")
+	if len(groupNodes) == 0 {
+		if senseNodes := findAllByMarker(node, "sense"); len(senseNodes) > 0 {
+			return []store.SenseGroup{buildSenseGroup(nil, senseNodes)}
 		}
-		return
-	case map[string]any:
-		switch dataContent(v) {
-		case "part-of-speech-info":
-			text := strings.TrimSpace(getString(v["title"]))
-			if text == "" {
-				text = strings.TrimSpace(renderText(v["content"]))
-			}
-			if text != "" {
-				appendUnique(pos, text)
-			}
-			return
+		return nil
+	}
 
-		case "sense":
-			// A sense's glossary and any note/xref that qualify it live
-			// together under this node. Fold them into one definition
-			// string instead of flattening them into separate list items,
-			// so a note like "usu. 小父さん or おじさん" reads as
-			// qualifying its own sense rather than appearing to be an
-			// unrelated definition of its own.
-			var gloss, notes, xrefs []string
-			walkSense(v["content"], &gloss, &notes, &xrefs, examples)
+	var groups []store.SenseGroup
+	for _, gn := range groupNodes {
+		pos := collectPOS(gn["content"])
+		senseNodes := findAllByMarker(gn["content"], "sense")
+		groups = append(groups, buildSenseGroup(pos, senseNodes))
+	}
+	return groups
+}
 
-			def := strings.Join(gloss, "; ")
-			for _, n := range notes {
-				def += " (" + n + ")"
-			}
-			for _, x := range xrefs {
-				def += " (" + x + ")"
-			}
-			def = strings.TrimSpace(def)
-			if def != "" {
-				*defs = append(*defs, def)
-			}
-			return
-
-		case "glossary":
-			items := collectListItems(v["content"])
-			if joined := strings.Join(items, "; "); joined != "" {
-				*defs = append(*defs, joined)
-			}
-			return
-
-		case "sense-note", "info-gloss":
-			if label, text := noteLabelText(v); text != "" {
-				*defs = append(*defs, label+": "+text)
-			}
-			return
-
-		case "xref":
-			if x := xrefText(v); x != "" {
-				*defs = append(*defs, x)
-			}
-			return
-
-		case "example-sentence":
-			if jp, en := exampleSentenceText(v); jp != "" || en != "" {
-				*examples = append(*examples, jp+"\n"+en)
-			}
-			return
-
-		case "attribution", "forms":
-			// source-dictionary link / alternate-spelling table: not useful as text
-			return
+func collectPOS(node any) []string {
+	var pos []string
+	for _, pn := range findAllByMarker(node, "part-of-speech-info") {
+		text := strings.TrimSpace(getString(pn["title"]))
+		if text == "" {
+			text = strings.TrimSpace(renderText(pn["content"]))
 		}
-
-		// presentational wrapper (sense-group, extra-info, ...): recurse
-		if content, ok := v["content"]; ok {
-			walkStructuredContent(content, pos, defs, examples)
+		if text != "" {
+			appendUnique(&pos, text)
 		}
 	}
+	return pos
+}
+
+func buildSenseGroup(pos []string, senseNodes []map[string]any) store.SenseGroup {
+	var senses []store.Sense
+	for _, sn := range senseNodes {
+		var glossParts, notes, xrefs []string
+		var examples []store.Example
+		walkSense(sn["content"], &glossParts, &notes, &xrefs, &examples)
+
+		gloss := strings.Join(glossParts, "; ")
+		if gloss == "" && len(notes) == 0 && len(xrefs) == 0 {
+			continue
+		}
+		senses = append(senses, store.Sense{
+			Gloss:    gloss,
+			Notes:    notes,
+			Xrefs:    xrefs,
+			Examples: examples,
+		})
+	}
+	return store.SenseGroup{Pos: pos, Senses: senses}
 }
 
 // walkSense descends a single sense's subtree, splitting its glossary text
-// from the notes/xrefs that qualify it, so the caller can fold them into one
-// definition. Example sentences found along the way still flow to the
-// entry's shared examples list.
-func walkSense(node any, gloss, notes, xrefs *[]string, examples *[]string) {
+// from the notes/xrefs that qualify it and the examples that illustrate it.
+func walkSense(node any, gloss, notes, xrefs *[]string, examples *[]store.Example) {
 	switch v := node.(type) {
 	case []any:
 		for _, c := range v {
@@ -292,7 +305,7 @@ func walkSense(node any, gloss, notes, xrefs *[]string, examples *[]string) {
 			return
 		case "example-sentence":
 			if jp, en := exampleSentenceText(v); jp != "" || en != "" {
-				*examples = append(*examples, jp+"\n"+en)
+				*examples = append(*examples, store.Example{JP: jp, EN: en})
 			}
 			return
 		}
