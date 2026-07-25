@@ -18,7 +18,7 @@
         runtimeDeps = [];
         nihongoPkg = pkgs.buildGoModule {
           pname = "nihongo";
-          version = "1.0";
+          version = "1.1.0";
           src = pkgs.lib.cleanSource ./.;
           vendorHash = "sha256-j6zMVJkzNK+s07SowF3FVt5DwgnQPWctZtpljRBGi50=";
 
