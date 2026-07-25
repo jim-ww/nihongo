@@ -2,11 +2,11 @@
 
 **A minimal, blazing-fast Japanese dictionary CLI tool** powered by [Yomitan](https://github.com/yomidevs/yomitan)-compatible dictionaries (default: [Jitendex](https://jitendex.org/)).
 
-Search instantly by **romaji**, **hiragana**, **katakana**, **kanji**, or **mixed kana+kanji**. Or look up Japanese words from English using the `-e` flag. All in a single static binary with zero external dependencies.
+Search instantly by **romaji**, **hiragana**, **katakana**, or **kanji**. Or look up Japanese words from English using the `-e` flag. All in a single static binary with zero external dependencies.
 
 ## Features
 
-- ✅ Reads full definitions, translations, examples, part-of-speech, and tags from any Yomitan-compatible `.zip` dictionary
+- ✅ Parses Yomitan's structured-content format: senses grouped under their part-of-speech, notes and cross-references attached to the sense they qualify, furigana preserved, alternate spellings/readings included
 - ✅ Interactive **fuzzy search** with `go-fuzzyfinder` (or plain list mode with `-fzf=false`)
 - ✅ **Single static binary** — no runtime dependencies, works everywhere Go does
 - ✅ Lightning-fast prefix + fuzzy matching on expressions and romaji readings
@@ -15,13 +15,34 @@ Search instantly by **romaji**, **hiragana**, **katakana**, **kanji**, or **mixe
   - Hiragana: `ぱん`, `ごはん`, `かんじる`
   - Katakana: `パン`, `パソコン`, `スーパーマーケット`
   - Kanji: `日本語`, `食べる`, `人`
-  - Mixed: `日本語`, `感じる`, `行く`
   - English → Japanese: `nihongo -e bread`, `nihongo -e existence`
 - ✅ One-command dictionary setup: `nihongo -download` (pulls latest Jitendex automatically)
 - ✅ Import your own Yomitan dictionary: `nihongo -import /path/to/dict.zip`
 - ✅ View full entry details (definitions, example sentences, tags, etc.)
 - ✅ Lookup by internal ID: `nihongo -id 115754`
 - ✅ Show installed dictionary metadata: `nihongo -info`
+
+### What an entry looks like
+
+Selecting a result (or looking it up with `-id`) shows the full card:
+
+```
+走る [はしる]  hashiru
+Tags: ★ priority form
+Also written/read: 奔る, 疾る, 趨る
+
+Godan verb with 'ru' ending, intransitive verb
+  1. to run
+       e.g. あの走(はし)ってる少(しょう)年(ねん)をごらんなさい。
+            Look at that boy running.[1]
+  2. to run (of a vehicle); to drive; to travel; to move; to sail
+       e.g. この車(くるま)は以(い)前(ぜん)ほど快(かい)調(ちょう)に走(はし)らない。
+            This car is running less smoothly than it used to.[2]
+  ...
+  5. to run away; to abscond; to elope
+       Note: occ. 奔る
+  ...
+```
 
 ## Installation
 
