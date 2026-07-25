@@ -14,17 +14,16 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	"github.com/jim-ww/nihongo/store"
 	"golang.org/x/sync/errgroup"
 )
 
-func importDict(st store.Store, zipReader io.ReaderAt, size int64, appData string) error {
+func importDict(st Store, zipReader io.ReaderAt, size int64, appData string) error {
 	zr, err := zip.NewReader(zipReader, size)
 	if err != nil {
 		return fmt.Errorf("failed to open zip: %w", err)
 	}
 
-	batchChan := make(chan []store.FtsDict, 8)
+	batchChan := make(chan []FtsDict, 8)
 
 	var totalCount int64
 	var wg sync.WaitGroup
@@ -73,7 +72,7 @@ func importDict(st store.Store, zipReader io.ReaderAt, size int64, appData strin
 				return fmt.Errorf("failed to unmarshal %s: %w", file.Name, err)
 			}
 
-			batch := make([]store.FtsDict, 0, len(bank))
+			batch := make([]FtsDict, 0, len(bank))
 			for i := range bank {
 				batch = append(batch, convertToFtsDict(bank[i]))
 			}

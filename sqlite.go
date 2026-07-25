@@ -1,4 +1,4 @@
-package sqlite
+package main
 
 import (
 	"database/sql"
@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/gojp/kana"
-	"github.com/jim-ww/nihongo/store"
 	_ "modernc.org/sqlite"
 )
 
@@ -63,7 +62,7 @@ func NewDB(dbPath string) (*DB, error) {
 	return &DB{DB: db}, nil
 }
 
-func (d *DB) InsertFtsDictBatch(bank []store.FtsDict) error {
+func (d *DB) InsertFtsDictBatch(bank []FtsDict) error {
 	tx, err := d.Begin()
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
@@ -128,7 +127,7 @@ func (d *DB) HasAtLeastOneEntry() (bool, error) {
 	return has, err
 }
 
-func (d *DB) FindEntryByID(id int) (store.FtsDict, error) {
+func (d *DB) FindEntryByID(id int) (FtsDict, error) {
 	const q = `
         SELECT rowid, expression, reading, reading_romaji, reading_romaji_alt, definitions, examples, pos, groups_json, forms,
                definition_tags, term_tags, score, sequence
@@ -136,7 +135,7 @@ func (d *DB) FindEntryByID(id int) (store.FtsDict, error) {
         WHERE rowid = ?
     `
 
-	var dict store.FtsDict
+	var dict FtsDict
 	var defs, examples, pos, groupsJSON, forms string
 
 	err := d.QueryRow(q, id).Scan(
@@ -166,7 +165,7 @@ func ftsQuote(s string) string {
 // - kanji -> search in expression 'kana'+'*'
 // - romaji (if latin and no -e flag) -> search 'input'+'*' in reading_romaji, max priority on equality
 // - English (if latin + -e flag) -> search in definitions, how?
-func (d *DB) Search(input string, limit int, isEnglish bool) ([]store.FtsDict, error) {
+func (d *DB) Search(input string, limit int, isEnglish bool) ([]FtsDict, error) {
 	originalInput := input
 	query := input
 
@@ -234,9 +233,9 @@ func (d *DB) Search(input string, limit int, isEnglish bool) ([]store.FtsDict, e
 	}
 	defer rows.Close()
 
-	var entries []store.FtsDict
+	var entries []FtsDict
 	for rows.Next() {
-		var dict store.FtsDict
+		var dict FtsDict
 		var defs, examples, posStr, groupsJSON, forms string
 
 		if err := rows.Scan(

@@ -15,8 +15,6 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	"github.com/jim-ww/nihongo/store"
-	"github.com/jim-ww/nihongo/store/sqlite"
 	"github.com/ktr0731/go-fuzzyfinder"
 )
 
@@ -64,11 +62,11 @@ func main() {
 	if err := os.MkdirAll(appData, 0o755); err != nil {
 		log.Fatal(err)
 	}
-	db, err := sqlite.NewDB(dbPath)
+	db, err := NewDB(dbPath)
 	if err != nil {
 		log.Fatalf("Failed to open/initialize db file: %v", err)
 	}
-	store := store.Store(db)
+	store := Store(db)
 	defer func() {
 		if err := store.Close(); err != nil {
 			fmt.Println("WARNING:", err)

@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/gojp/kana"
-	"github.com/jim-ww/nihongo/store"
 )
 
 // tripleN matches gojp/kana's romanization bug where a geminate ん before a
@@ -64,9 +63,9 @@ func getFloat(v any) float64 {
 	return 0
 }
 
-func convertToFtsDict(term []any) store.FtsDict {
+func convertToFtsDict(term []any) FtsDict {
 	if len(term) < 8 {
-		return store.FtsDict{}
+		return FtsDict{}
 	}
 
 	expression := getString(term[0])
@@ -83,7 +82,7 @@ func convertToFtsDict(term []any) store.FtsDict {
 		}
 	}
 
-	return store.FtsDict{
+	return FtsDict{
 		Expression:       expression,
 		Reading:          reading,
 		ReadingRomaji:    romaji,
@@ -223,12 +222,12 @@ func findAllByMarker(root any, marker string) []map[string]any {
 // grouped the way the dictionary itself groups it - senses sharing a
 // part-of-speech under one heading - plus flattened pos/definitions/examples
 // for search indexing and list-view previews.
-func extractEntry(glossary any) (groups []store.SenseGroup, pos, defs, examples, forms []string) {
+func extractEntry(glossary any) (groups []SenseGroup, pos, defs, examples, forms []string) {
 	for _, item := range asSlice(glossary) {
 		switch v := item.(type) {
 		case string:
 			if t := strings.TrimSpace(v); t != "" {
-				groups = append(groups, store.SenseGroup{Senses: []store.Sense{{Gloss: t}}})
+				groups = append(groups, SenseGroup{Senses: []Sense{{Gloss: t}}})
 			}
 		case map[string]any:
 			switch getString(v["type"]) {
@@ -243,7 +242,7 @@ func extractEntry(glossary any) (groups []store.SenseGroup, pos, defs, examples,
 					t = strings.TrimSpace(renderText(v["content"]))
 				}
 				if t != "" {
-					groups = append(groups, store.SenseGroup{Senses: []store.Sense{{Gloss: t}}})
+					groups = append(groups, SenseGroup{Senses: []Sense{{Gloss: t}}})
 				}
 			case "image":
 				// unsupported in a text-only CLI, skip
@@ -278,19 +277,19 @@ func extractEntry(glossary any) (groups []store.SenseGroup, pos, defs, examples,
 }
 
 // extractSenseGroups finds every sense-group in a structured-content tree
-// and builds it into a store.SenseGroup. Dictionaries occasionally omit the
+// and builds it into a SenseGroup. Dictionaries occasionally omit the
 // sense-group wrapper for a single ungrouped sense, so as a fallback it
 // looks for bare "sense" nodes too.
-func extractSenseGroups(node any) []store.SenseGroup {
+func extractSenseGroups(node any) []SenseGroup {
 	groupNodes := findAllByMarker(node, "sense-group")
 	if len(groupNodes) == 0 {
 		if senseNodes := findAllByMarker(node, "sense"); len(senseNodes) > 0 {
-			return []store.SenseGroup{buildSenseGroup(nil, senseNodes)}
+			return []SenseGroup{buildSenseGroup(nil, senseNodes)}
 		}
 		return nil
 	}
 
-	var groups []store.SenseGroup
+	var groups []SenseGroup
 	for _, gn := range groupNodes {
 		pos := collectPOS(gn["content"])
 		senseNodes := findAllByMarker(gn["content"], "sense")
@@ -353,30 +352,30 @@ func collectPOS(node any) []string {
 	return pos
 }
 
-func buildSenseGroup(pos []string, senseNodes []map[string]any) store.SenseGroup {
-	var senses []store.Sense
+func buildSenseGroup(pos []string, senseNodes []map[string]any) SenseGroup {
+	var senses []Sense
 	for _, sn := range senseNodes {
 		var glossParts, notes, xrefs []string
-		var examples []store.Example
+		var examples []Example
 		walkSense(sn["content"], &glossParts, &notes, &xrefs, &examples)
 
 		gloss := strings.Join(glossParts, "; ")
 		if gloss == "" && len(notes) == 0 && len(xrefs) == 0 {
 			continue
 		}
-		senses = append(senses, store.Sense{
+		senses = append(senses, Sense{
 			Gloss:    gloss,
 			Notes:    notes,
 			Xrefs:    xrefs,
 			Examples: examples,
 		})
 	}
-	return store.SenseGroup{Pos: pos, Senses: senses}
+	return SenseGroup{Pos: pos, Senses: senses}
 }
 
 // walkSense descends a single sense's subtree, splitting its glossary text
 // from the notes/xrefs that qualify it and the examples that illustrate it.
-func walkSense(node any, gloss, notes, xrefs *[]string, examples *[]store.Example) {
+func walkSense(node any, gloss, notes, xrefs *[]string, examples *[]Example) {
 	switch v := node.(type) {
 	case []any:
 		for _, c := range v {
@@ -400,7 +399,7 @@ func walkSense(node any, gloss, notes, xrefs *[]string, examples *[]store.Exampl
 			return
 		case "example-sentence":
 			if jp, en := exampleSentenceText(v); jp != "" || en != "" {
-				*examples = append(*examples, store.Example{JP: jp, EN: en})
+				*examples = append(*examples, Example{JP: jp, EN: en})
 			}
 			return
 		}

@@ -5,10 +5,9 @@ import (
 	"strings"
 
 	"github.com/gojp/kana"
-	"github.com/jim-ww/nihongo/store"
 )
 
-func formatList(r store.FtsDict) string {
+func formatList(r FtsDict) string {
 	b := new(strings.Builder)
 
 	fmt.Fprintf(b, "%s", r.Expression)
@@ -41,7 +40,7 @@ func formatList(r store.FtsDict) string {
 	return b.String()
 }
 
-func formatEntry(r store.FtsDict) string {
+func formatEntry(r FtsDict) string {
 	b := new(strings.Builder)
 
 	fmt.Fprintf(b, "%s", r.Expression)
@@ -91,7 +90,7 @@ func formatEntry(r store.FtsDict) string {
 // mirroring how the dictionary itself groups meanings, with each sense's
 // notes/cross-references/examples nested beneath it instead of flattened
 // into the definition list.
-func formatGroups(b *strings.Builder, groups []store.SenseGroup) {
+func formatGroups(b *strings.Builder, groups []SenseGroup) {
 	n := 0
 	for _, g := range groups {
 		if len(g.Senses) == 0 {
@@ -124,7 +123,7 @@ func formatGroups(b *strings.Builder, groups []store.SenseGroup) {
 
 // formatFlatDefinitions is the fallback for glossaries that never had
 // structured-content grouping to begin with (plain-string glossaries).
-func formatFlatDefinitions(b *strings.Builder, r store.FtsDict) {
+func formatFlatDefinitions(b *strings.Builder, r FtsDict) {
 	if len(r.Pos) > 0 {
 		fmt.Fprintf(b, "Part of Speech: %s\n\n", strings.Join(r.Pos, ", "))
 	}

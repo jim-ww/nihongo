@@ -1,4 +1,4 @@
-package store
+package main
 
 // Example is a single JP/EN example sentence pair attached to a Sense.
 type Example struct {
