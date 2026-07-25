@@ -23,19 +23,20 @@ type SenseGroup struct {
 }
 
 type FtsDict struct {
-	RowID          int          `db:"rowid"`
-	Expression     string       `db:"expression" json:"expression"`
-	Reading        string       `db:"reading" json:"reading"`
-	ReadingRomaji  string       `db:"reading_romaji" json:"reading_romaji"`
-	Definitions    []string     `db:"definitions" json:"definitions"`
-	Examples       []string     `db:"examples" json:"examples"`
-	Pos            []string     `db:"pos" json:"pos"`
-	Groups         []SenseGroup `db:"groups" json:"groups"`
-	Forms          []string     `db:"forms" json:"forms"`
-	DefinitionTags string       `db:"definition_tags" json:"definition_tags"`
-	TermTags       string       `db:"term_tags" json:"term_tags"`
-	Score          float64      `db:"score" json:"score"`
-	Sequence       string       `db:"sequence" json:"sequence"`
+	RowID            int          `db:"rowid"`
+	Expression       string       `db:"expression" json:"expression"`
+	Reading          string       `db:"reading" json:"reading"`
+	ReadingRomaji    string       `db:"reading_romaji" json:"reading_romaji"`
+	ReadingRomajiAlt string       `db:"reading_romaji_alt" json:"reading_romaji_alt"`
+	Definitions      []string     `db:"definitions" json:"definitions"`
+	Examples         []string     `db:"examples" json:"examples"`
+	Pos              []string     `db:"pos" json:"pos"`
+	Groups           []SenseGroup `db:"groups" json:"groups"`
+	Forms            []string     `db:"forms" json:"forms"`
+	DefinitionTags   string       `db:"definition_tags" json:"definition_tags"`
+	TermTags         string       `db:"term_tags" json:"term_tags"`
+	Score            float64      `db:"score" json:"score"`
+	Sequence         string       `db:"sequence" json:"sequence"`
 }
 
 type Store interface {

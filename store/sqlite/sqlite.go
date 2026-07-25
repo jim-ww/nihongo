@@ -20,6 +20,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS fts_dict USING fts5(
     expression,
     reading,
     reading_romaji,
+    reading_romaji_alt,
     definitions,
     examples,
     pos,
@@ -71,8 +72,8 @@ func (d *DB) InsertFtsDictBatch(bank []store.FtsDict) error {
 
 	stmt, err := tx.Prepare(`
         INSERT INTO fts_dict
-        (expression, reading, reading_romaji, definitions, examples, pos, groups_json, forms, definition_tags, term_tags, sequence, score)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (expression, reading, reading_romaji, reading_romaji_alt, definitions, examples, pos, groups_json, forms, definition_tags, term_tags, sequence, score)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 	if err != nil {
 		return fmt.Errorf("prepare: %w", err)
@@ -99,6 +100,7 @@ func (d *DB) InsertFtsDictBatch(bank []store.FtsDict) error {
 			entry.Expression,
 			entry.Reading,
 			entry.ReadingRomaji,
+			entry.ReadingRomajiAlt,
 			defsJoined,
 			examplesJoined,
 			posJoined,
@@ -128,7 +130,7 @@ func (d *DB) HasAtLeastOneEntry() (bool, error) {
 
 func (d *DB) FindEntryByID(id int) (store.FtsDict, error) {
 	const q = `
-        SELECT rowid, expression, reading, reading_romaji, definitions, examples, pos, groups_json, forms,
+        SELECT rowid, expression, reading, reading_romaji, reading_romaji_alt, definitions, examples, pos, groups_json, forms,
                definition_tags, term_tags, score, sequence
         FROM fts_dict
         WHERE rowid = ?
@@ -138,7 +140,7 @@ func (d *DB) FindEntryByID(id int) (store.FtsDict, error) {
 	var defs, examples, pos, groupsJSON, forms string
 
 	err := d.QueryRow(q, id).Scan(
-		&dict.RowID, &dict.Expression, &dict.Reading, &dict.ReadingRomaji,
+		&dict.RowID, &dict.Expression, &dict.Reading, &dict.ReadingRomaji, &dict.ReadingRomajiAlt,
 		&defs, &examples, &pos, &groupsJSON, &forms,
 		&dict.DefinitionTags, &dict.TermTags, &dict.Score, &dict.Sequence,
 	)
@@ -201,21 +203,23 @@ func (d *DB) Search(input string, limit int, isEnglish bool) ([]store.FtsDict, e
 		args = []any{ftsQuote(query) + "*", query, query}
 
 	default:
-		// Japanese / Romaji search
+		// Japanese / Romaji search. reading_romaji_alt covers words where
+		// は/へ/を are pronounced as particles (wa/e/o) rather than
+		// literally (ha/he/wo), e.g. こんにちは = "konnichiwa".
 		exprPrefix := ftsQuote(originalInput) + "*"
 		romajiClean := strings.ReplaceAll(query, "-", "")
 		romajiPrefix := ftsQuote(romajiClean) + "*"
-		where = `expression MATCH ? OR reading_romaji MATCH ?`
+		where = `expression MATCH ? OR reading_romaji MATCH ? OR reading_romaji_alt MATCH ?`
 		orderBy = `score DESC,
 		           CASE WHEN expression = ? THEN 4500
-		                WHEN reading_romaji = ? THEN 4000
+		                WHEN reading_romaji = ? OR reading_romaji_alt = ? THEN 4000
 		                ELSE 0 END DESC,
-		           bm25(fts_dict, 20, 3, 38, 3, 1, 1, 0, 0, 1, 1, 1, 1) DESC`
-		args = []any{exprPrefix, romajiPrefix, originalInput, query}
+		           bm25(fts_dict, 20, 3, 38, 20, 3, 1, 1, 0, 0, 1, 1, 1, 1) DESC`
+		args = []any{exprPrefix, romajiPrefix, romajiPrefix, originalInput, query, query}
 	}
 
 	q := fmt.Sprintf(`
-        SELECT rowid, expression, reading, reading_romaji, definitions, examples, pos, groups_json, forms,
+        SELECT rowid, expression, reading, reading_romaji, reading_romaji_alt, definitions, examples, pos, groups_json, forms,
                definition_tags, term_tags, score, sequence
         FROM fts_dict
         WHERE %s
@@ -236,7 +240,7 @@ func (d *DB) Search(input string, limit int, isEnglish bool) ([]store.FtsDict, e
 		var defs, examples, posStr, groupsJSON, forms string
 
 		if err := rows.Scan(
-			&dict.RowID, &dict.Expression, &dict.Reading, &dict.ReadingRomaji,
+			&dict.RowID, &dict.Expression, &dict.Reading, &dict.ReadingRomaji, &dict.ReadingRomajiAlt,
 			&defs, &examples, &posStr, &groupsJSON, &forms,
 			&dict.DefinitionTags, &dict.TermTags, &dict.Score, &dict.Sequence,
 		); err != nil {

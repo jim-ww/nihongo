@@ -2,11 +2,47 @@ package main
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/gojp/kana"
 	"github.com/jim-ww/nihongo/store"
 )
+
+// tripleN matches gojp/kana's romanization bug where a geminate ん before a
+// な-row kana (な/に/ぬ/ね/の) gets rendered with one extra spurious 'n'
+// (e.g. "みんな" -> "minnna" instead of "minna"). Collapsing any run of 3+
+// 'n' down to the correct 2 fixes romaji search for that whole class of
+// words without touching the (correct) single-n cases.
+var tripleN = regexp.MustCompile(`n{3,}`)
+
+func normalizeRomaji(s string) string {
+	return tripleN.ReplaceAllString(s, "nn")
+}
+
+// particleReplacer produces the alternate reading used when は/へ/を appear
+// in their grammatical-particle pronunciation (wa/e/o) rather than their
+// literal one (ha/he/wo) - e.g. こんにちは is pronounced/romanized
+// "konnichiwa", not "konnichiha". There's no way to know from the reading
+// alone which is intended, so rather than hardcoding a word list, this
+// mechanically generates the alternate romanization for any reading
+// containing one of these three kana and lets search match either; a
+// reading where は/へ/を is never intended as a particle just gets one
+// unused extra index entry, which is harmless.
+var particleReplacer = strings.NewReplacer("は", "わ", "へ", "え", "を", "お")
+
+// altReadingRomaji returns the particle-pronunciation romanization of
+// reading, or "" if は/へ/を don't appear in it (nothing to disambiguate).
+func altReadingRomaji(reading string) string {
+	if !strings.ContainsAny(reading, "はへを") {
+		return ""
+	}
+	alt := particleReplacer.Replace(reading)
+	if alt == reading {
+		return ""
+	}
+	return normalizeRomaji(kana.KanaToRomaji(alt))
+}
 
 func getString(v any) string {
 	if v == nil {
@@ -35,7 +71,8 @@ func convertToFtsDict(term []any) store.FtsDict {
 
 	expression := getString(term[0])
 	reading := getString(term[1])
-	romaji := kana.KanaToRomaji(reading)
+	romaji := normalizeRomaji(kana.KanaToRomaji(reading))
+	altRomaji := altReadingRomaji(reading)
 
 	groups, pos, defs, examples, forms := extractEntry(term[5])
 
@@ -47,18 +84,19 @@ func convertToFtsDict(term []any) store.FtsDict {
 	}
 
 	return store.FtsDict{
-		Expression:     expression,
-		Reading:        reading,
-		ReadingRomaji:  romaji,
-		DefinitionTags: getString(term[2]),
-		TermTags:       getString(term[7]),
-		Sequence:       fmt.Sprintf("%.0f", getFloat(term[6])),
-		Score:          getFloat(term[4]),
-		Definitions:    defs,
-		Examples:       examples,
-		Pos:            pos,
-		Groups:         groups,
-		Forms:          altForms,
+		Expression:       expression,
+		Reading:          reading,
+		ReadingRomaji:    romaji,
+		ReadingRomajiAlt: altRomaji,
+		DefinitionTags:   getString(term[2]),
+		TermTags:         getString(term[7]),
+		Sequence:         fmt.Sprintf("%.0f", getFloat(term[6])),
+		Score:            getFloat(term[4]),
+		Definitions:      defs,
+		Examples:         examples,
+		Pos:              pos,
+		Groups:           groups,
+		Forms:            altForms,
 	}
 }
 
